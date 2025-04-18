@@ -1,20 +1,11 @@
-﻿using Manta.Remote.Services;
-using Microsoft.Extensions.Configuration;
+﻿using Manta.Remote.Helpers;
+using Manta.Remote.Services;
 
 DaemonService daemonService = new();
 
 await daemonService.GetHaveno();
 
-IConfigurationRoot config = new ConfigurationBuilder()
-    .AddUserSecrets<Program>()
-    .Build();
-
-var password = config["password"];
-if (password is null)
-{
-    password = Guid.NewGuid().ToString();
-    config["password"] = password;
-}
+var password = PasswordHelper.GetPassword();
 
 var daemonTask = Task.Run(() => daemonService.StartDaemon(password));
 var proxyTask = Task.Run(daemonService.StartReverseProxy);

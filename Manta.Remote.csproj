@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore.Web" Version="2.70.0" />
     <PackageReference Include="Knapcode.TorSharp" Version="2.15.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.4" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
