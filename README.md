@@ -10,6 +10,7 @@ It also has a reverse proxy to translate grpc-web from the Haveno app since the 
 If it's required, this could be run as a hidden service and I have started writing some of that code but it does not work as of now.
 
 ## Install
+Note: make sure port 2134 is open
 1. Download one of the releases or build from source
 2. Unzip
 3. Give execute permissions if on Linux (chmod +x Manta.Remote)
