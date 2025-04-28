@@ -167,7 +167,7 @@ public class DaemonService
             if (string.IsNullOrEmpty(_currentHavenoVersion))
                 throw new Exception("_currentHavenoVersion was null");
 
-            if (int.Parse(latestVersion.Replace(".", "")) > int.Parse(_currentHavenoVersion.Replace(".", "")))
+            if (Version.Parse(latestVersion) > Version.Parse(_currentHavenoVersion))
             {
                 _havenoInstallationStatus = HavenoInstallationStatus.InstalledOutOfDate;
 
@@ -183,7 +183,7 @@ public class DaemonService
                         Console.WriteLine("Updating Haveno daemon...");
 
                         // Data is saved in appdata/user folders so this is fine
-                        Directory.Delete(daemonPath);
+                        Directory.Delete(daemonPath, true);
 
                         await FetchHaveno(daemonPath, selectedRepo, latestVersion);
                     }
