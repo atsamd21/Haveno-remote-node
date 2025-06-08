@@ -11,7 +11,6 @@ using Yarp.ReverseProxy.Configuration;
 using System.Net;
 using Yarp.ReverseProxy.Forwarder;
 using Microsoft.Extensions.Logging;
-using Manta.Remote.Helpers;
 
 namespace Manta.Remote.Services;
 
@@ -276,8 +275,6 @@ public class DaemonService
 
     public async Task StartDaemon(string password)
     {
-        await QrCodeHelper.PrintExternalIpAddressAndPassword(password);
-
         var currentDirectory = AppDomain.CurrentDomain.BaseDirectory;
         if (string.IsNullOrEmpty(currentDirectory))
             throw new Exception();
@@ -308,12 +305,15 @@ public class DaemonService
                         "--useLocalhostForP2P=false " +
                         "--useDevPrivilegeKeys=false " +
                         "--nodePort=9999 " +
-                        "--appName=haveno-XMR_STAGENET_user1 " +
+                        "--appName=haveno-XMR_STAGENET " +
                         $"--apiPassword={password} " +
                         "--apiPort=3201 " +
                         "--passwordRequired=false " +
                         "--useNativeXmrWallet=false",
-            
+                        //"--torControlHost=127.0.0.1:19050 " +
+                        //"--torControlPort=19051",
+
+
             WorkingDirectory = currentDirectory
         };
 

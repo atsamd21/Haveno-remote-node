@@ -1,5 +1,6 @@
 ﻿using Knapcode.TorSharp;
 using Manta.Remote.Models;
+using System.IO;
 using System.Net;
 using System.Net.Http.Json;
 
@@ -33,7 +34,7 @@ public class TorService
 
         using var httpClient = new HttpClient();
         var fetcher = new TorSharpToolFetcher(_settings, httpClient);
-
+        
         try
         {
             var update = await fetcher.CheckForUpdatesAsync();
@@ -104,7 +105,7 @@ public class TorService
         using StreamReader reader = new(fileStream);
         string input = reader.ReadToEnd();
 
-        string hiddenServiceParameter = "HiddenServicePort 9998 127.0.0.1:9998";
+        string hiddenServiceParameter = "HiddenServicePort 2134 127.0.0.1:2134";
         string hiddenServiceDir = $"HiddenServiceDir {Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HiddenService")}";
         //string hiddenServiceParameter = "HiddenServicePort 9998 unix:/var/run/tor/my-website.sock;
 
@@ -118,6 +119,20 @@ public class TorService
         }
 
         writer.Close();
+    }
+
+    public async Task StartHiddenService()
+    {
+        var proxy = new TorSharpProxy(_settings);
+        await proxy.ConfigureAndStartAsync();
+    }
+
+    public string GetOnionAddress()
+    {
+        string hostnameFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HiddenService", "hostname");
+        using var fileStream = File.Open(hostnameFile, FileMode.Open, FileAccess.Read);
+        using StreamReader reader = new(fileStream);
+        return reader.ReadToEnd();
     }
 
     public async Task StartOutgoingTorProxy()
