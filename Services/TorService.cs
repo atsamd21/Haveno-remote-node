@@ -91,7 +91,7 @@ public class TorService
         switch (_settings.OSPlatform)
         {
             case TorSharpOSPlatform.Linux:
-                torFolderName = _settings.Architecture == TorSharpArchitecture.X64 ? "tor-linux32-" : "tor-linux64-";
+                torFolderName = _settings.Architecture == TorSharpArchitecture.X64 ? "tor-linux64-" : "tor-linux32-";
                 break;
             case TorSharpOSPlatform.Windows:
                 torFolderName = _settings.Architecture == TorSharpArchitecture.X64 ? "tor-win64-" : "tor-win32-";
