@@ -4,20 +4,20 @@ using Manta.Remote.Services;
 DaemonService daemonService = new();
 TorService torService = new();
 
-await torService.EnsureTorInstalled();
+await daemonService.GetHavenoAsync();
+
+await torService.EnsureTorInstalledAsync();
 
 torService.SetupHiddenService();
 
-await torService.StartHiddenService();
-
-await daemonService.GetHaveno();
+await torService.StartHiddenServiceAsync();
 
 var password = PasswordHelper.GetPassword();
 var host = torService.GetOnionAddress();
 
 QrCodeHelper.PrintExternalIpAddressAndPassword(host, password);
 
-var daemonTask = Task.Run(() => daemonService.StartDaemon(password));
-var proxyTask = Task.Run(daemonService.StartReverseProxy);
+var daemonTask = Task.Run(() => daemonService.StartDaemonAsync(password));
+var proxyTask = Task.Run(daemonService.StartReverseProxyAsync);
 
 Task.WaitAny([proxyTask, daemonTask]);

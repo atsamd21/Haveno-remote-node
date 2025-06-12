@@ -28,7 +28,7 @@ public class TorService
         };
     }
 
-    public async Task EnsureTorInstalled()
+    public async Task EnsureTorInstalledAsync()
     {
         Console.WriteLine("Checking Tor installation...");
 
@@ -121,7 +121,7 @@ public class TorService
         writer.Close();
     }
 
-    public async Task StartHiddenService()
+    public async Task StartHiddenServiceAsync()
     {
         var proxy = new TorSharpProxy(_settings);
         await proxy.ConfigureAndStartAsync();

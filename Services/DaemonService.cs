@@ -110,7 +110,7 @@ public class DaemonService
         }
     }
 
-    public async Task GetHaveno()
+    public async Task GetHavenoAsync()
     {
         Console.WriteLine("Initializing...");
 
@@ -201,7 +201,7 @@ public class DaemonService
         }
     }
 
-    public async Task StartReverseProxy()
+    public async Task StartReverseProxyAsync()
     {
         var builder = Host.CreateDefaultBuilder().ConfigureWebHostDefaults(webBuilder =>
         {
@@ -273,7 +273,7 @@ public class DaemonService
         await builder.Build().RunAsync();
     }
 
-    public async Task StartDaemon(string password)
+    public async Task StartDaemonAsync(string password)
     {
         var currentDirectory = AppDomain.CurrentDomain.BaseDirectory;
         if (string.IsNullOrEmpty(currentDirectory))
