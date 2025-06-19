@@ -32,8 +32,23 @@ public class DaemonService
 
     public DaemonService()
     {
-        // TODO Add support for linux ARM
-        _os = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" : "linux-x86_64";
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            _os = "windows";
+        }
+        else
+        {
+            _os = "linux-";
+
+            if (RuntimeInformation.OSArchitecture.ToString() == "X64")
+            {
+                _os += "x86_64";
+            }
+            else
+            {
+                _os += "aarch64";
+            }
+        }
     }
 
     private bool IsJavaInstalled()
@@ -91,7 +106,7 @@ public class DaemonService
 
         ZipFile.ExtractToDirectory(memoryStream, daemonPath);
 
-        using var fileStream = File.Open(Path.Combine(daemonPath, "version.txt"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        using var fileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
         using var writer = new StreamWriter(fileStream);
         writer.Write(latestVersion);
         writer.Close();
@@ -102,7 +117,7 @@ public class DaemonService
             {
                 FileName = "chmod",
                 Arguments = $"+x haveno-daemon",
-                WorkingDirectory = Path.Combine(daemonPath, _os)
+                WorkingDirectory = Path.Combine(daemonPath)
             };
 
             var process = Process.Start(startInfo);
@@ -112,34 +127,23 @@ public class DaemonService
 
     public async Task GetHavenoAsync()
     {
-        Console.WriteLine("Initializing...");
+        Console.WriteLine("Checking Haveno installation");
 
-        var daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Daemon");
+        var daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "daemon");
         
-        // Also creates if does not exist
         Directory.CreateDirectory(daemonPath);
 
-        var directories = Directory.GetDirectories(daemonPath);
-        if (directories.Length == 0)
+        if (Directory.GetFiles(daemonPath).Contains("version"))
         {
-            _havenoInstallationStatus = HavenoInstallationStatus.NotInstalled;
+            using var fileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
+            using var reader = new StreamReader(fileStream);
+
+            _currentHavenoVersion = await reader.ReadToEndAsync();
+            reader.Close();
         }
         else
         {
-            var havenoDirectory = directories.Where(x => x.Contains(_os, StringComparison.CurrentCultureIgnoreCase)).FirstOrDefault();
-            if (havenoDirectory is not null)
-            {
-                using var fileStream = File.Open(Path.Combine(daemonPath, "version.txt"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
-                using var reader = new StreamReader(fileStream);
-
-                _currentHavenoVersion = await reader.ReadToEndAsync();
-                reader.Close();
-            }
-            else
-            {
-                // Daemon directory not empty but does not contain a haveno directory?
-                _havenoInstallationStatus = HavenoInstallationStatus.NotInstalled;
-            }
+            _havenoInstallationStatus = HavenoInstallationStatus.NotInstalled;
         }
 
         var selectedRepo = _havenoRepos[0];
@@ -296,11 +300,11 @@ public class DaemonService
 
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-        var daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Daemon");
+        var daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "daemon");
 
         ProcessStartInfo startInfo = new()
         {
-            FileName = isWindows ? Path.Combine(daemonPath, _os, "haveno-daemon.bat") : Path.Combine(daemonPath, _os, "haveno-daemon"),
+            FileName = isWindows ? Path.Combine(daemonPath, "haveno-daemon.bat") : Path.Combine(daemonPath, "haveno-daemon"),
             Arguments = "--baseCurrencyNetwork=XMR_STAGENET " +
                         "--useLocalhostForP2P=false " +
                         "--useDevPrivilegeKeys=false " +
@@ -309,10 +313,8 @@ public class DaemonService
                         $"--apiPassword={password} " +
                         "--apiPort=3201 " +
                         "--passwordRequired=false " +
+                        "--disableRateLimits " +
                         "--useNativeXmrWallet=false",
-                        //"--torControlHost=127.0.0.1:19050 " +
-                        //"--torControlPort=19051",
-
 
             WorkingDirectory = currentDirectory
         };
