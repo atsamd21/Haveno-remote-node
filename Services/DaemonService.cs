@@ -133,7 +133,7 @@ public class DaemonService
         
         Directory.CreateDirectory(daemonPath);
 
-        if (Directory.GetFiles(daemonPath).Contains("version"))
+        if (Directory.GetFiles(daemonPath).Any(x => x.Contains("version")))
         {
             using var fileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
             using var reader = new StreamReader(fileStream);
