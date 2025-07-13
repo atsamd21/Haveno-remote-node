@@ -1,26 +1,17 @@
-﻿using Microsoft.AspNetCore.Hosting;
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
-using System.IO.Compression;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Yarp.ReverseProxy.Configuration;
-using System.Net;
 using Yarp.ReverseProxy.Forwarder;
-using Microsoft.Extensions.Logging;
 
 namespace Manta.Remote.Services;
-
-public enum HavenoInstallationStatus
-{
-    None,
-    NotInstalled,
-    InstalledLatest,
-    InstalledOutOfDate
-}
 
 public class DaemonService
 {
@@ -28,7 +19,8 @@ public class DaemonService
     private string[] _havenoRepos = ["atsamd21/haveno", "haveno-dex/haveno"];
     private string? _currentHavenoVersion;
     private string _os;
-    private HavenoInstallationStatus _havenoInstallationStatus;
+
+    protected string _latestDaemonVersion = "1.1.2.5";
 
     public DaemonService()
     {
@@ -99,17 +91,19 @@ public class DaemonService
     {
         using var client = new HttpClient();
 
-        //var bytes = await client.GetByteArrayAsync($"https://github.com/{selectedRepo}/archive/refs/tags/v{latestVersion}.zip");
-        var bytes = await client.GetByteArrayAsync($"https://github.com/{selectedRepo}/releases/download/v{latestVersion}/{_os}.zip");
+        var bytes = await client.GetByteArrayAsync($"https://github.com/{selectedRepo}/releases/download/v{latestVersion}/daemon-{_os}.jar");
 
         using MemoryStream memoryStream = new(bytes);
 
-        ZipFile.ExtractToDirectory(memoryStream, daemonPath);
-
-        using var fileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
-        using var writer = new StreamWriter(fileStream);
+        using var versionFileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        using var writer = new StreamWriter(versionFileStream);
         writer.Write(latestVersion);
         writer.Close();
+
+        using var daemonFileStream = File.Create(Path.Combine(daemonPath, "daemon.jar"));
+        await memoryStream.CopyToAsync(daemonFileStream);
+
+        daemonFileStream.Close();
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -140,63 +134,34 @@ public class DaemonService
 
             _currentHavenoVersion = await reader.ReadToEndAsync();
             reader.Close();
-        }
-        else
-        {
-            _havenoInstallationStatus = HavenoInstallationStatus.NotInstalled;
-        }
 
-        var selectedRepo = _havenoRepos[0];
-
-        // Could also get a list of all releases and let user choose
-        using var client = new HttpClient();
-        var response = await client.GetAsync($"https://github.com/{selectedRepo}/releases/latest");
-
-        // Are all prepended with "v"?
-        var latestVersion = response.RequestMessage?.RequestUri?.ToString().Split("tag/v").ElementAt(1);
-        if (latestVersion is null)
-            throw new Exception("Could not parse latest version");
-
-        if (_havenoInstallationStatus == HavenoInstallationStatus.NotInstalled)
-        {
-            Console.WriteLine("Haveno daemon not installed, will install now");
-
-            await FetchHaveno(daemonPath, selectedRepo, latestVersion);
-
-            Console.WriteLine("Haveno daemon finished installing");
-        }
-        else
-        {
             if (string.IsNullOrEmpty(_currentHavenoVersion))
                 throw new Exception("_currentHavenoVersion was null");
 
-            if (Version.Parse(latestVersion) > Version.Parse(_currentHavenoVersion))
+            if (_latestDaemonVersion != _currentHavenoVersion)
             {
-                _havenoInstallationStatus = HavenoInstallationStatus.InstalledOutOfDate;
+                Console.WriteLine("New Haveno version found. Updating Haveno daemon...");
 
-                Console.WriteLine($"There is a new version available: v{latestVersion}. Current version is: v{_currentHavenoVersion}. Would you like to update? Enter [y] or [yes], default is no");
+                Directory.Delete(daemonPath, true);
 
-                var input = Console.ReadLine();
-                if (!string.IsNullOrEmpty(input))
-                {
-                    input = input.Trim().ToLower();
+                var selectedRepo = _havenoRepos[0];
+                await FetchHaveno(daemonPath, selectedRepo, _latestDaemonVersion);
 
-                    if (input == "y" || input == "yes")
-                    {
-                        Console.WriteLine("Updating Haveno daemon...");
-
-                        // Data is saved in appdata/user folders so this is fine
-                        Directory.Delete(daemonPath, true);
-
-                        await FetchHaveno(daemonPath, selectedRepo, latestVersion);
-                    }
-                }
+                Console.WriteLine("Finished updating");
             }
             else
             {
-                _havenoInstallationStatus = HavenoInstallationStatus.InstalledLatest;
                 Console.WriteLine("Haveno daemon up to date");
             }
+        }
+        else
+        {
+            Console.WriteLine("Haveno daemon not installed, will install now");
+
+            var selectedRepo = _havenoRepos[0];
+            await FetchHaveno(daemonPath, selectedRepo, _latestDaemonVersion);
+
+            Console.WriteLine("Haveno daemon finished installing");
         }
 
         if (!IsJavaInstalled())
@@ -304,8 +269,11 @@ public class DaemonService
 
         ProcessStartInfo startInfo = new()
         {
-            FileName = isWindows ? Path.Combine(daemonPath, "haveno-daemon.bat") : Path.Combine(daemonPath, "haveno-daemon"),
-            Arguments = "--baseCurrencyNetwork=XMR_STAGENET " +
+            FileName = "java",
+            Arguments = "-jar " +
+                        Path.Combine(daemonPath, "daemon.jar") +
+                        " " +
+                        "--baseCurrencyNetwork=XMR_STAGENET " +
                         "--useLocalhostForP2P=false " +
                         "--useDevPrivilegeKeys=false " +
                         "--nodePort=9999 " +
@@ -313,8 +281,8 @@ public class DaemonService
                         $"--apiPassword={password} " +
                         "--apiPort=3201 " +
                         "--passwordRequired=false " +
-                        "--disableRateLimits " +
-                        "--useNativeXmrWallet=false",
+                        "--disableRateLimits=true " +
+                        "--useNativeXmrWallet=false ",
 
             WorkingDirectory = currentDirectory
         };
