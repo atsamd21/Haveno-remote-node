@@ -20,4 +20,29 @@
     <Folder Include="HiddenService\" />
     <Folder Include="Tor\" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <DaemonUrl>https://github.com/atsamd21/haveno/releases/download/v1.2.0</DaemonUrl>
+    <Network>XMR_STAGENET</Network>
+    <!-- Don't use the same name as the haveno desktop client! -->
+    <HavenoAppName>haveno-dev</HavenoAppName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>HavenoAppName</_Parameter1>
+      <_Parameter2>$(HavenoAppName)</_Parameter2>
+    </AssemblyAttribute>
+
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>Network</_Parameter1>
+      <_Parameter2>$(Network)</_Parameter2>
+    </AssemblyAttribute>
+
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>DaemonUrl</_Parameter1>
+      <_Parameter2>$(DaemonUrl)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  
 </Project>

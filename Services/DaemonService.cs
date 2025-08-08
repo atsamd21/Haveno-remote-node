@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using Manta.Remote.Models;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,12 +16,9 @@ namespace Manta.Remote.Services;
 
 public class DaemonService
 {
-    // TODO give user options to choose network
-    private string[] _havenoRepos = ["atsamd21/haveno", "haveno-dex/haveno"];
-    private string? _currentHavenoVersion;
-    private string _os;
-
-    protected string _latestDaemonVersion = "1.1.2.5";
+    private readonly string _os;
+    private readonly string _daemonUrlFileName = "installed-daemon-url";
+    private readonly string _daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "daemon");
 
     public DaemonService()
     {
@@ -87,17 +85,17 @@ public class DaemonService
         }
     }
 
-    private async Task FetchHaveno(string daemonPath, string selectedRepo, string latestVersion)
+    private async Task FetchHaveno(string daemonPath, string daemonUrl)
     {
         using var client = new HttpClient();
 
-        var bytes = await client.GetByteArrayAsync($"https://github.com/{selectedRepo}/releases/download/v{latestVersion}/daemon-{_os}.jar");
+        var bytes = await client.GetByteArrayAsync($"{daemonUrl}/daemon-{_os}.jar");
 
         using MemoryStream memoryStream = new(bytes);
 
-        using var versionFileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        using var versionFileStream = File.Open(Path.Combine(daemonPath, _daemonUrlFileName), FileMode.OpenOrCreate, FileAccess.ReadWrite);
         using var writer = new StreamWriter(versionFileStream);
-        writer.Write(latestVersion);
+        writer.Write(daemonUrl);
         writer.Close();
 
         using var daemonFileStream = File.Create(Path.Combine(daemonPath, "daemon.jar"));
@@ -119,49 +117,61 @@ public class DaemonService
         }
     }
 
+    private string? GetInstalledDaemonUrl(string daemonPath)
+    {
+        try
+        {
+            using var fileStream = File.Open(Path.Combine(daemonPath, _daemonUrlFileName), FileMode.Open, FileAccess.ReadWrite);
+            using var reader = new StreamReader(fileStream);
+
+            var currentIntalledDaemonUrl = reader.ReadToEnd();
+            reader.Close();
+
+            return currentIntalledDaemonUrl;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
     public async Task GetHavenoAsync()
     {
         Console.WriteLine("Checking Haveno installation");
 
-        var daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "daemon");
+        // ?
+        Directory.CreateDirectory(_daemonPath);
         
-        Directory.CreateDirectory(daemonPath);
+        var currentIntalledDaemonUrl = GetInstalledDaemonUrl(_daemonPath);
 
-        if (Directory.GetFiles(daemonPath).Any(x => x.Contains("version")))
+        if (string.IsNullOrEmpty(currentIntalledDaemonUrl))
         {
-            using var fileStream = File.Open(Path.Combine(daemonPath, "version"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
-            using var reader = new StreamReader(fileStream);
+            Console.WriteLine("Haveno daemon not installed, will install now...");
 
-            _currentHavenoVersion = await reader.ReadToEndAsync();
-            reader.Close();
+            await FetchHaveno(_daemonPath, AppConstants.DaemonUrl);
 
-            if (string.IsNullOrEmpty(_currentHavenoVersion))
-                throw new Exception("_currentHavenoVersion was null");
-
-            if (_latestDaemonVersion != _currentHavenoVersion)
+            Console.WriteLine("Haveno daemon finished installing");
+        }
+        else
+        {
+            if (AppConstants.DaemonUrl != currentIntalledDaemonUrl)
             {
                 Console.WriteLine("New Haveno version found. Updating Haveno daemon...");
 
-                Directory.Delete(daemonPath, true);
+                Directory.Delete(_daemonPath, true);
 
-                var selectedRepo = _havenoRepos[0];
-                await FetchHaveno(daemonPath, selectedRepo, _latestDaemonVersion);
+                await FetchHaveno(_daemonPath, AppConstants.DaemonUrl);
 
                 Console.WriteLine("Finished updating");
             }
             else
             {
-                Console.WriteLine("Haveno daemon up to date");
+                Console.WriteLine("Haveno daemon is up to date");
             }
-        }
-        else
-        {
-            Console.WriteLine("Haveno daemon not installed, will install now");
-
-            var selectedRepo = _havenoRepos[0];
-            await FetchHaveno(daemonPath, selectedRepo, _latestDaemonVersion);
-
-            Console.WriteLine("Haveno daemon finished installing");
         }
 
         if (!IsJavaInstalled())
@@ -265,19 +275,17 @@ public class DaemonService
 
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-        var daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "daemon");
-
         ProcessStartInfo startInfo = new()
         {
             FileName = "java",
             Arguments = "-jar " +
-                        Path.Combine(daemonPath, "daemon.jar") +
+                        Path.Combine(_daemonPath, "daemon.jar") +
                         " " +
-                        "--baseCurrencyNetwork=XMR_STAGENET " +
+                        $"--baseCurrencyNetwork={AppConstants.Network} " +
                         "--useLocalhostForP2P=false " +
                         "--useDevPrivilegeKeys=false " +
                         "--nodePort=9999 " +
-                        "--appName=haveno-XMR_STAGENET " +
+                        $"--appName={AppConstants.HavenoAppName} " +
                         $"--apiPassword={password} " +
                         "--apiPort=3201 " +
                         "--passwordRequired=false " +
