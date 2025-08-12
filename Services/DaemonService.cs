@@ -18,7 +18,7 @@ public class DaemonService
 {
     private readonly string _os;
     private readonly string _daemonUrlFileName = "installed-daemon-url";
-    private readonly string _daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "daemon");
+    private readonly string _daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppConstants.HavenoAppName, "daemon");
 
     public DaemonService()
     {
