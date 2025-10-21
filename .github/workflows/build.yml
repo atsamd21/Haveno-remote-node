@@ -46,10 +46,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: haveno-remote-node-${{ matrix.rid }}
-          path: bin/Release/net8.0/${{ matrix.rid }}/publish/haveno-remote-node-${{ matrix.rid }}.zip
+          path: bin/Release/net8.0/${{ matrix.rid }}/haveno-remote-node-${{ matrix.rid }}.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: bin/Release/net8.0/${{ matrix.rid }}/publish/haveno-remote-node-${{ matrix.rid }}.zip
+          files: bin/Release/net8.0/${{ matrix.rid }}/haveno-remote-node-${{ matrix.rid }}.zip
  
