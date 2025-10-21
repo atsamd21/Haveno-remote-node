@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <DaemonUrl>https://github.com/atsamd21/haveno/releases/download/v1.2.0</DaemonUrl>
+    <DaemonUrl>https://github.com/atsamd21/haveno/releases/download/v1.2.2</DaemonUrl>
     <Network>XMR_STAGENET</Network>
     <!-- Don't use the same name as the haveno desktop client! -->
     <HavenoAppName>haveno-dev</HavenoAppName>
@@ -43,6 +43,10 @@
       <_Parameter1>DaemonUrl</_Parameter1>
       <_Parameter2>$(DaemonUrl)</_Parameter2>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".github\workflows\build.yml" />
   </ItemGroup>
   
 </Project>

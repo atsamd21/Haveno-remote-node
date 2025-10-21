@@ -1,0 +1,53 @@
+﻿name: Build Remote Node
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+          # - os: ubuntu-latest
+          #   rid: linux-arm64
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish self-contained binary
+        run: dotnet publish --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -p:DebugType=none -p:IncludeSymbols=false -p:StripSymbols=true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: haveno-remote-node-${{ matrix.rid }}
+          path: bin/Release/net8.0/publish/${{ matrix.rid }}/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/haveno-remote-node-win-x64/**
+            dist/haveno-remote-node-linux-x64/**
+            dist/haveno-remote-node-linux-arm64/**
+ 
