@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: windows-latest
+          - os: ubuntu-latest
             rid: win-x64
           - os: ubuntu-latest
             rid: linux-x64
@@ -37,14 +37,19 @@ jobs:
       - name: Publish self-contained binary
         run: dotnet publish --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -p:DebugType=none -p:IncludeSymbols=false -p:StripSymbols=true -p:AssemblyName=haveno-remote-node-${{ matrix.rid }}
 
+      - name: Zip
+        run: |
+            cd bin/Release/net8.0/${{ matrix.rid }}
+            zip -r haveno-remote-node-${{ matrix.rid }}.zip publish/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: haveno-remote-node-${{ matrix.rid }}
-          path: bin/Release/net8.0/${{ matrix.rid }}/publish/
+          path: bin/Release/net8.0/${{ matrix.rid }}/publish/haveno-remote-node-${{ matrix.rid }}.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: bin/Release/net8.0/${{ matrix.rid }}/publish/**
+          files: bin/Release/net8.0/${{ matrix.rid }}/publish/haveno-remote-node-${{ matrix.rid }}.zip
  
