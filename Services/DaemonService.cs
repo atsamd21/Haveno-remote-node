@@ -66,8 +66,8 @@ public class DaemonService
 
             process.WaitForExit();
 
-            Match match = Regex.Match(output, @"version\s+""(?<version>\d+)\.");
-            if (match.Success && match.Groups["version"].Value == "21")
+            Match match = Regex.Match(output, @"version\s+""(?<version>\d+)");
+            if (match.Success && Version.TryParse(match.Groups["version"].Value + (match.Groups["version"].Value.Contains('.') ? "" : ".0"), out var value) && value >= new Version(21, 0))
             {
                 Console.WriteLine("Java installed");
                 return true;
@@ -270,7 +270,7 @@ public class DaemonService
 
         if (i > 1)
         {
-            throw new Exception("Manta.Remote is already running");
+            throw new Exception("Node is already running");
         }
 
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
