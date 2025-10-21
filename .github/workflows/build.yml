@@ -41,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: haveno-remote-node-${{ matrix.rid }}
-          path: bin/Release/net8.0/publish/${{ matrix.rid }}/
+          path: bin/Release/net8.0/${{ matrix.rid }}/publish/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
