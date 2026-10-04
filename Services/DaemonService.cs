@@ -326,7 +326,7 @@ public class DaemonService
                         {
                             ["haveno"] = new DestinationConfig
                             {
-                                Address = "http://localhost:3201"
+                                Address = "http://127.0.0.1:3201" // the daemon api binds to ipv4 loopback by default
                             }
                         },
                         HttpRequest = new ForwarderRequestConfig
