@@ -4,11 +4,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using Yarp.ReverseProxy.Configuration;
 using Yarp.ReverseProxy.Forwarder;
@@ -17,6 +17,8 @@ namespace Manta.Remote.Services;
 
 public class DaemonService
 {
+    private const int ProxyPort = 2134;
+
     private readonly string _os;
     private readonly string _daemonUrlFileName = "installed-daemon-url";
     private readonly string _basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppConstants.HavenoAppName);
@@ -88,12 +90,12 @@ public class DaemonService
         }
     }
 
-    private async Task FetchHaveno(string daemonPath, string daemonUrl)
+    private async Task FetchHaveno(string daemonPath, string daemonUrl, CancellationToken cancellationToken)
     {
         using var client = new HttpClient();
 
         var jarUrl = $"{daemonUrl}/daemon-{_os}.jar";
-        using var response = await client.GetAsync(jarUrl);
+        using var response = await client.GetAsync(jarUrl, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
             throw new Exception($"No daemon jar for {_os} at {jarUrl}. Ask the network operator to publish daemon-{_os}.jar, or set DaemonUrl to a release which has it.");
@@ -101,19 +103,15 @@ public class DaemonService
         if (!response.IsSuccessStatusCode)
             throw new Exception($"Could not download {jarUrl}: {(int)response.StatusCode} {response.ReasonPhrase}");
 
-        var bytes = await response.Content.ReadAsByteArrayAsync();
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
 
         using MemoryStream memoryStream = new(bytes);
 
-        using var versionFileStream = File.Open(Path.Combine(daemonPath, _daemonUrlFileName), FileMode.OpenOrCreate, FileAccess.ReadWrite);
-        using var writer = new StreamWriter(versionFileStream);
-        writer.Write(daemonUrl);
-        writer.Close();
-
         using var daemonFileStream = File.Create(Path.Combine(daemonPath, "daemon.jar"));
-        await memoryStream.CopyToAsync(daemonFileStream);
+        await memoryStream.CopyToAsync(daemonFileStream, cancellationToken);
 
         daemonFileStream.Close();
+        await File.WriteAllTextAsync(Path.Combine(daemonPath, _daemonUrlFileName), daemonUrl, cancellationToken);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -196,8 +194,9 @@ public class DaemonService
         }
     }
 
-    public async Task GetHavenoAsync()
+    public async Task GetHavenoAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Console.WriteLine("Checking Haveno installation");
 
         Directory.CreateDirectory(_daemonPath);
@@ -251,7 +250,7 @@ public class DaemonService
         {
             Console.WriteLine("Haveno daemon not installed, will install now...");
 
-            await FetchHaveno(_daemonPath, AppConstants.DaemonUrl);
+            await FetchHaveno(_daemonPath, AppConstants.DaemonUrl, cancellationToken);
 
             Console.WriteLine("Haveno daemon finished installing");
         }
@@ -264,7 +263,7 @@ public class DaemonService
                 Directory.Delete(_daemonPath, true);
                 Directory.CreateDirectory(_daemonPath);
 
-                await FetchHaveno(_daemonPath, AppConstants.DaemonUrl);
+                await FetchHaveno(_daemonPath, AppConstants.DaemonUrl, cancellationToken);
 
                 Console.WriteLine("Finished updating");
             }
@@ -280,13 +279,13 @@ public class DaemonService
         }
     }
 
-    public async Task StartReverseProxyAsync()
+    public IHost CreateReverseProxy()
     {
         var builder = Host.CreateDefaultBuilder().ConfigureWebHostDefaults(webBuilder =>
         {
             webBuilder.ConfigureKestrel(serverOptions =>
             {
-                serverOptions.Listen(IPAddress.Any, 2134, listenOptions =>
+                serverOptions.Listen(IPAddress.Loopback, ProxyPort, listenOptions =>
                 {
                     listenOptions.Protocols = HttpProtocols.Http1;
                 });
@@ -349,29 +348,14 @@ public class DaemonService
             });
         });
 
-        await builder.Build().RunAsync();
+        return builder.Build();
     }
 
-    public async Task StartDaemonAsync(string password)
+    public async Task StartDaemonAsync(string password, Action<string> onOnionAddressFound, CancellationToken cancellationToken)
     {
         var currentDirectory = AppDomain.CurrentDomain.BaseDirectory;
         if (string.IsNullOrEmpty(currentDirectory))
             throw new Exception();
-
-        var procesess = Process.GetProcesses();
-        int i = 0;
-        foreach (var p in procesess)
-        {
-            if (p.ProcessName.CompareTo("Manta.Remote") == 0)
-            {
-                i++;
-            }
-        }
-
-        if (i > 1)
-        {
-            throw new Exception("Node is already running");
-        }
 
         // use ArgumentList so paths with spaces (e.g. ~/Library/Application Support) are quoted correctly
         ProcessStartInfo startInfo = new()
@@ -379,6 +363,7 @@ public class DaemonService
             FileName = "java",
             ArgumentList =
             {
+                "-Dstdout.encoding=UTF-8",
                 "-jar",
                 Path.Combine(_daemonPath, "daemon.jar"),
                 $"--baseCurrencyNetwork={AppConstants.Network}",
@@ -389,33 +374,135 @@ public class DaemonService
                 $"--appName={AppConstants.HavenoAppName}",
                 $"--apiPassword={password}",
                 "--apiPort=3201",
+                "--apiHiddenService=true",
+                // Allow the mobile app to unlock the account remotely after a restart.
+                "--apiHiddenServiceBeforeLogin=true",
+                $"--apiHiddenServicePort={ProxyPort}",
                 "--passwordRequired=false",
                 "--disableRateLimits=true",
                 "--useNativeXmrWallet=false",
             },
 
-            WorkingDirectory = currentDirectory
+            WorkingDirectory = currentDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            StandardOutputEncoding = Encoding.UTF8
         };
 
-        var process = Process.Start(startInfo);
-
-        if (process is null)
-            throw new Exception("process was null");
-
-        process.Exited += (sender, e) =>
+        cancellationToken.ThrowIfCancellationRequested();
+        using var process = Process.Start(startInfo) ?? throw new Exception("Could not start Haveno daemon");
+        using var outputCancellation = new CancellationTokenSource();
+        var outputTask = ForwardDaemonOutputAsync(process.StandardOutput, outputCancellation.Token);
+        try
         {
-            Console.WriteLine("Haveno daemon exited");
-        };
+            var hostnameFile = Path.Combine(_dataPath, AppConstants.Network.ToLowerInvariant(), "tor", "hiddenservice", "api", "hostname");
+            bool addressFound = false;
+            Console.WriteLine("Waiting for the daemon's API onion address...");
 
-        Console.CancelKeyPress += (sender, e) =>
+            while (!process.HasExited)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (outputTask.IsCompleted)
+                    await outputTask;
+
+                var hostname = ReadHostname(hostnameFile);
+                if (Regex.IsMatch(hostname, @"\A[a-z2-7]{56}\.onion\z") && !process.HasExited)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // The persisted address is valid across restarts; finding it does not imply Tor is ready.
+                    Console.WriteLine("Tor startup may still be in progress.");
+                    onOnionAddressFound(hostname);
+                    addressFound = true;
+                    break;
+                }
+
+                await Task.Delay(1000, cancellationToken);
+            }
+
+            var exitTask = process.WaitForExitAsync(cancellationToken);
+            var completed = await Task.WhenAny(exitTask, outputTask);
+            await completed;
+            await exitTask;
+
+            if (process.ExitCode != 0 && !cancellationToken.IsCancellationRequested)
+                throw new Exception($"Haveno daemon exited with code {process.ExitCode}. Check the daemon output above.");
+
+            if (!addressFound && !cancellationToken.IsCancellationRequested)
+                throw new Exception("Haveno daemon stopped before its API onion address was available. Check the daemon output above.");
+        }
+        finally
         {
-            Console.WriteLine("SIGINT received");
-
-            process.StandardInput.Close();
-
-            e.Cancel = false;
-        };
-
-        await process.WaitForExitAsync();
+            try
+            {
+                await StopDaemonAsync(process);
+            }
+            finally
+            {
+                try
+                {
+                    // Drain final diagnostics, but do not wait indefinitely for a descendant holding stdout open.
+                    await outputTask.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (TimeoutException)
+                {
+                    outputCancellation.Cancel();
+                    Console.Error.WriteLine("Stopped waiting for the daemon's output pipe to close.");
+                }
+            }
+        }
     }
+
+    private static async Task ForwardDaemonOutputAsync(StreamReader reader, CancellationToken cancellationToken)
+    {
+        // Use the same console writer so forwarded stdout cannot split the QR graphic.
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+            Console.WriteLine(line);
+    }
+
+    private static string ReadHostname(string path)
+    {
+        try
+        {
+            // Allow the daemon to write or replace the file while it is being read, including on Windows.
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd().Trim();
+        }
+        catch (IOException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static async Task StopDaemonAsync(Process process)
+    {
+        if (process.HasExited)
+            return;
+
+        Console.WriteLine("Stopping Haveno daemon...");
+        // Windows delivers the console event to Java too. On Unix, also handle SIGTERM sent only to this app.
+        if (!OperatingSystem.IsWindows())
+            kill(process.Id, 15);
+
+        try
+        {
+            // Allow the daemon's four-minute shutdown watchdog to run before forcing termination.
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(5));
+        }
+        catch (TimeoutException)
+        {
+            Console.Error.WriteLine("Haveno daemon did not stop within five minutes; terminating its process tree.");
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) when (process.HasExited)
+            {
+            }
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern int kill(int pid, int signal);
 }

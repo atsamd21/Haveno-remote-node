@@ -1,23 +1,38 @@
 ﻿using Manta.Remote.Helpers;
 using Manta.Remote.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 DaemonService daemonService = new();
-TorService torService = new();
+using var proxy = daemonService.CreateReverseProxy();
 
-await daemonService.GetHavenoAsync();
+try
+{
+    // Bind before starting Java so a second node fails without touching daemon data.
+    await proxy.StartAsync();
+    var stopping = proxy.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
 
-await torService.EnsureTorInstalledAsync();
+    try
+    {
+        await daemonService.GetHavenoAsync(stopping);
+        var password = PasswordHelper.GetPassword();
 
-torService.SetupHiddenService();
+        await daemonService.StartDaemonAsync(password,
+            host => QrCodeHelper.PrintExternalIpAddressAndPassword(host, password), stopping);
+    }
+    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+    {
+        // The host handles Ctrl+C and SIGTERM; the daemon finishes shutting down first.
+    }
+    finally
+    {
+        await proxy.StopAsync();
+    }
 
-await torService.StartHiddenServiceAsync();
-
-var password = PasswordHelper.GetPassword();
-var host = torService.GetOnionAddress();
-
-QrCodeHelper.PrintExternalIpAddressAndPassword(host, password);
-
-var daemonTask = Task.Run(() => daemonService.StartDaemonAsync(password));
-var proxyTask = Task.Run(daemonService.StartReverseProxyAsync);
-
-Task.WaitAny([proxyTask, daemonTask]);
+    return 0;
+}
+catch (Exception e)
+{
+    Console.Error.WriteLine(e.Message);
+    return 1;
+}

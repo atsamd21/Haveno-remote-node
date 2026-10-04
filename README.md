@@ -2,7 +2,7 @@
 This application requires <a href="https://adoptium.net/temurin/releases/?version=21" target="_blank">Java 21</a>
 
 ## About
-Installs the Haveno daemon and starts a reverse proxy to translate grpc-web from the Haveno app. The remote node runs a hidden service so no port forwarding is required.
+Installs the Haveno daemon and starts a reverse proxy to translate grpc-web from the Haveno app. The daemon publishes the proxy as a hidden service on its own tor instance, so no port forwarding is required.
 
 Currently works on windows, linux and macos
 
@@ -14,7 +14,7 @@ The application can be built using GitHub actions and is set up to trigger a bui
 
 1. Set up your Haveno repo to build the daemon
 	
-	Haveno builds the daemon jars for every platform on release. macos clients need daemon-macos-x86_64.jar and daemon-macos-aarch64.jar, added by https://github.com/haveno-dex/haveno/commit/20970b976a and included in releases after v1.8.0.
+	Use a daemon release containing [Haveno PR #2606](https://github.com/haveno-dex/haveno/pull/2606), with support for `--apiHiddenService`, `--apiHiddenServiceBeforeLogin`, and `--apiHiddenServicePort`. These publish the reverse proxy through the daemon's Tor instance and allow remote account unlock after a restart. macos clients also need `daemon-macos-x86_64.jar` and `daemon-macos-aarch64.jar` in that release.
 
 2. Open Manta.Remote.csproj in a text editor
 
@@ -30,6 +30,10 @@ The application can be built using GitHub actions and is set up to trigger a bui
 3. chmod +x haveno-remote-node-[platform]
 4. Install Java 21
 5. Run haveno-remote-node-[platform]
+
+With Java 21, unlock existing password-protected accounts through the mobile app or RPC; this launcher does not provide a local password prompt.
+
+The launcher enables `--apiHiddenServiceBeforeLogin=true`, so a locked account remains reachable over Tor. This starts the shared API/P2P Tor instance using startup configuration or defaults; encrypted bridge preferences cannot be applied to that session, even after unlocking. If bridges are required, configure `torrcFile` in the daemon's `data/haveno.properties` before starting the node, following the [Haveno deployment guide](https://github.com/haveno-dex/haveno/blob/master/docs/deployment-guide.md#add-arbitrators).
 
 ### macos
 Use the osx-arm64 release on Apple Silicon and osx-x64 on Intel. The releases are not notarized, so clear the quarantine flag after unzipping:
