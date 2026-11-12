@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <DaemonUrl>https://github.com/atsamd21/haveno/releases/download/v1.8.0</DaemonUrl>
+    <DaemonUrl>https://github.com/atsamd21/haveno/releases/download/v1.12.0</DaemonUrl>
     <Network>XMR_STAGENET</Network>
     <!-- Don't use the same name as the haveno desktop client! -->
     <HavenoAppName>haveno-dev</HavenoAppName>
