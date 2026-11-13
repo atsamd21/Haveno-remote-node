@@ -357,6 +357,10 @@ public class DaemonService
         if (string.IsNullOrEmpty(currentDirectory))
             throw new Exception();
 
+        // On localhost P2P the daemon runs without Tor, so a tor on the PATH publishes the proxy instead.
+        var useLocalhost = AppConstants.UseLocalhostForP2P;
+        var torPath = Path.Combine(currentDirectory, "tor");
+
         // use ArgumentList so paths with spaces (e.g. ~/Library/Application Support) are quoted correctly
         ProcessStartInfo startInfo = new()
         {
@@ -367,16 +371,17 @@ public class DaemonService
                 "-jar",
                 Path.Combine(_daemonPath, "daemon.jar"),
                 $"--baseCurrencyNetwork={AppConstants.Network}",
-                "--useLocalhostForP2P=false",
+                $"--useLocalhostForP2P={(useLocalhost ? "true" : "false")}",
                 "--useDevPrivilegeKeys=false",
-                "--nodePort=9999",
+                // Localhost P2P binds the node port directly, and 9999 is the API port of Haveno's local user1.
+                $"--nodePort={(useLocalhost ? 3202 : 9999)}",
                 $"--appDataDir={_dataPath}",
                 $"--appName={AppConstants.HavenoAppName}",
                 $"--apiPassword={password}",
                 "--apiPort=3201",
-                "--apiHiddenService=true",
+                $"--apiHiddenService={(useLocalhost ? "false" : "true")}",
                 // Allow the mobile app to unlock the account remotely after a restart.
-                "--apiHiddenServiceBeforeLogin=true",
+                $"--apiHiddenServiceBeforeLogin={(useLocalhost ? "false" : "true")}",
                 $"--apiHiddenServicePort={ProxyPort}",
                 "--passwordRequired=false",
                 "--disableRateLimits=true",
@@ -390,20 +395,26 @@ public class DaemonService
         };
 
         cancellationToken.ThrowIfCancellationRequested();
+        using var tor = useLocalhost ? StartTor(torPath) : null;
         using var process = Process.Start(startInfo) ?? throw new Exception("Could not start Haveno daemon");
         using var outputCancellation = new CancellationTokenSource();
         var outputTask = ForwardDaemonOutputAsync(process.StandardOutput, outputCancellation.Token);
+        var torTask = tor is null ? Task.Delay(Timeout.Infinite, cancellationToken) : WatchTorAsync(tor, cancellationToken);
         try
         {
-            var hostnameFile = Path.Combine(_dataPath, AppConstants.Network.ToLowerInvariant(), "tor", "hiddenservice", "api", "hostname");
+            var hostnameFile = useLocalhost
+                ? Path.Combine(torPath, "hiddenservice", "hostname")
+                : Path.Combine(_dataPath, AppConstants.Network.ToLowerInvariant(), "tor", "hiddenservice", "api", "hostname");
             bool addressFound = false;
-            Console.WriteLine("Waiting for the daemon's API onion address...");
+            Console.WriteLine("Waiting for the API onion address...");
 
             while (!process.HasExited)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (outputTask.IsCompleted)
                     await outputTask;
+                if (torTask.IsCompleted)
+                    await torTask;
 
                 var hostname = ReadHostname(hostnameFile);
                 if (Regex.IsMatch(hostname, @"\A[a-z2-7]{56}\.onion\z") && !process.HasExited)
@@ -420,9 +431,9 @@ public class DaemonService
             }
 
             var exitTask = process.WaitForExitAsync(cancellationToken);
-            var completed = await Task.WhenAny(exitTask, outputTask);
+            var completed = await Task.WhenAny(exitTask, outputTask, torTask);
             await completed;
-            await exitTask;
+            await await Task.WhenAny(exitTask, torTask);
 
             if (process.ExitCode != 0 && !cancellationToken.IsCancellationRequested)
                 throw new Exception($"Haveno daemon exited with code {process.ExitCode}. Check the daemon output above.");
@@ -438,6 +449,7 @@ public class DaemonService
             }
             finally
             {
+                tor?.Kill();
                 try
                 {
                     // Drain final diagnostics, but do not wait indefinitely for a descendant holding stdout open.
@@ -450,6 +462,42 @@ public class DaemonService
                 }
             }
         }
+    }
+
+    private static Process StartTor(string torPath)
+    {
+        // Tor creates its data and hidden service directories itself with the permissions it requires.
+        Directory.CreateDirectory(torPath);
+
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = "tor",
+            ArgumentList =
+            {
+                "--hush",
+                // An optional torrc in the tor directory is used instead of the system torrc.
+                "-f", Path.Combine(torPath, "torrc"), "--ignore-missing-torrc",
+                "--SocksPort", "0",
+                "--DataDirectory", Path.Combine(torPath, "data"),
+                "--HiddenServiceDir", Path.Combine(torPath, "hiddenservice"),
+                "--HiddenServicePort", $"{ProxyPort} 127.0.0.1:{ProxyPort}",
+                // Tor exits with the launcher, even if the launcher is killed.
+                "--__OwningControllerProcess", Environment.ProcessId.ToString(),
+            },
+
+            UseShellExecute = false
+        };
+
+        return Process.Start(startInfo) ?? throw new Exception("Could not start tor");
+    }
+
+    private static async Task WatchTorAsync(Process tor, CancellationToken cancellationToken)
+    {
+        await tor.WaitForExitAsync(cancellationToken);
+        var exitCode = tor.ExitCode;
+        // Ctrl+C also stops tor directly, so let the launcher's own stop request arrive first.
+        await Task.Delay(1000, cancellationToken);
+        throw new Exception($"tor exited with code {exitCode}. Check its output above.");
     }
 
     private static async Task ForwardDaemonOutputAsync(StreamReader reader, CancellationToken cancellationToken)
