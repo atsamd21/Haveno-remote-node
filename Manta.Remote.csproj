@@ -22,6 +22,8 @@
     <Network>XMR_STAGENET</Network>
     <!-- Don't use the same name as the haveno desktop client! -->
     <HavenoAppName>haveno-dev</HavenoAppName>
+    <!-- For local testing: use localhost for P2P and publish the reverse proxy through a tor on the PATH -->
+    <UseLocalhostForP2P>false</UseLocalhostForP2P>
   </PropertyGroup>
 
   <ItemGroup>
@@ -38,6 +40,11 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
       <_Parameter1>DaemonUrl</_Parameter1>
       <_Parameter2>$(DaemonUrl)</_Parameter2>
+    </AssemblyAttribute>
+
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>UseLocalhostForP2P</_Parameter1>
+      <_Parameter2>$(UseLocalhostForP2P)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

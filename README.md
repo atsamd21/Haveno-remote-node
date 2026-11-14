@@ -47,3 +47,6 @@ Apple Silicon also needs Rosetta 2, since the daemon ships x86_64 monero binarie
 ```
 softwareupdate --install-rosetta --agree-to-license
 ```
+
+## Local testing
+To test against a local Haveno network, set `Network` to XMR_LOCAL and `UseLocalhostForP2P` to true in Manta.Remote.csproj. The daemon then uses localhost for P2P and runs without Tor, so the launcher publishes the reverse proxy through a `tor` on the PATH instead, which must be installed separately. Its files are kept in a `tor` folder next to the executable.
